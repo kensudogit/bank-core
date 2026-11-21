@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * コンプライアンス：AML（マネー・ローンダリング対策）と不正取引の監視、アラートの案件管理、疑わしい取引の届出。
@@ -40,6 +42,8 @@ public class AmlService {
     public static final long LARGE_CASH = 2_000_000;
     public static final long STRUCT_MIN = 500_000;
     public static final long RAPID_MIN = 1_000_000;
+    /** 1 回の検査で読む件数の上限 */
+    private static final int BATCH = 20_000;
 
     public record Alert(long id, String rule, Long customerId, Long accountId, String reference, int score, String detail,
                         String status, String assignedTo, String resolutionNote, OffsetDateTime createdAt) {
@@ -67,6 +71,9 @@ public class AmlService {
     /**
      * 前回の続きから取引・オーソリ・海外送金を検査してアラートを作る。カーソル行をロックするので、
      * 複数インスタンスから同時に呼ばれても同じ範囲を二重に検査しない。アラートは（ルール, 参照）で一意。
+     *
+     * <p>性能のため、ルールに該当し得ない取引（50 万円未満・外貨）は SQL の段階で除き、顧客のリスク評価や
+     * カードの直近件数も 1 本の SQL でまとめて取る（取引 1 件ごとの往復をしない）。
      */
     @Transactional
     public ScanReport scan() {
@@ -75,68 +82,95 @@ public class AmlService {
         long lastAuth = ((Number) cursor.get("last_authorization_id")).longValue();
         long lastForeign = ((Number) cursor.get("last_foreign_id")).longValue();
         int created = 0;
+        Set<String> seen = new HashSet<>();   // この回の検査で既に作成を試みた（ルール, 参照）
 
-        List<Map<String, Object>> txs = jdbc.sql("""
-                        SELECT t.id, t.type, t.source_account_id, t.target_account_id, t.amount_minor, t.currency, t.created_at
-                          FROM transactions t
-                         WHERE t.id > :last AND t.status = 'COMPLETED' ORDER BY t.id LIMIT 5000""")
-                .param("last", lastTx).query().listOfRows();
-        long maxTx = lastTx;
-        for (Map<String, Object> t : txs) {
-            long id = ((Number) t.get("id")).longValue();
-            maxTx = Math.max(maxTx, id);
-            if ("JPY".equals(String.valueOf(t.get("currency")).trim())) {
-                created += checkTransaction(t, id);
+        // 今回の検査範囲（完了済み取引を最大 BATCH 件）
+        Map<String, Object> range = jdbc.sql("""
+                        SELECT count(*) AS n, COALESCE(MAX(id), :last) AS max_id FROM (
+                            SELECT id FROM transactions WHERE id > :last AND status = 'COMPLETED' ORDER BY id LIMIT :batch) w""")
+                .param("last", lastTx).param("batch", BATCH).query().singleRow();
+        int scannedTx = ((Number) range.get("n")).intValue();
+        long maxTx = ((Number) range.get("max_id")).longValue();
+        if (scannedTx > 0) {
+            List<Map<String, Object>> candidates = jdbc.sql("""
+                            SELECT t.id, t.type, t.source_account_id, t.target_account_id, t.amount_minor, t.created_at,
+                                   sa.customer_id AS source_customer, sc.aml_risk AS source_risk,
+                                   ta.customer_id AS target_customer, tc.aml_risk AS target_risk
+                              FROM transactions t
+                              LEFT JOIN accounts sa ON sa.id = t.source_account_id
+                              LEFT JOIN customers sc ON sc.id = sa.customer_id
+                              LEFT JOIN accounts ta ON ta.id = t.target_account_id
+                              LEFT JOIN customers tc ON tc.id = ta.customer_id
+                             WHERE t.id > :last AND t.id <= :max AND t.status = 'COMPLETED'
+                               AND t.currency = 'JPY' AND t.amount_minor >= :min
+                             ORDER BY t.id""")
+                    .param("last", lastTx).param("max", maxTx).param("min", Math.min(STRUCT_MIN, RAPID_MIN))
+                    .query().listOfRows();
+            for (Map<String, Object> t : candidates) {
+                created += checkTransaction(t, seen);
             }
         }
 
+        // オーソリ：直近 10 分の件数・否決数とカードの口座・顧客を 1 本で取る
         List<Map<String, Object>> auths = jdbc.sql("""
-                        SELECT id, card_id, status, created_at FROM card_authorizations WHERE id > :last ORDER BY id LIMIT 5000""")
-                .param("last", lastAuth).query().listOfRows();
+                        SELECT a.id, a.card_id, a.created_at, c.account_id, acc.customer_id, w.total, w.declined
+                          FROM card_authorizations a
+                          JOIN cards c ON c.id = a.card_id
+                          JOIN accounts acc ON acc.id = c.account_id
+                          CROSS JOIN LATERAL (
+                              SELECT count(*) AS total, count(*) FILTER (WHERE b.status = 'DECLINED') AS declined
+                                FROM card_authorizations b
+                               WHERE b.card_id = a.card_id AND b.created_at > a.created_at - interval '10 minutes'
+                                 AND b.created_at <= a.created_at AND b.id <= a.id) w
+                         WHERE a.id > :last ORDER BY a.id LIMIT :batch""")
+                .param("last", lastAuth).param("batch", BATCH).query().listOfRows();
         long maxAuth = lastAuth;
         for (Map<String, Object> a : auths) {
-            long id = ((Number) a.get("id")).longValue();
-            maxAuth = Math.max(maxAuth, id);
-            created += checkCard(a, id);
+            maxAuth = Math.max(maxAuth, ((Number) a.get("id")).longValue());
+            created += checkCard(a, seen);
         }
 
         List<Map<String, Object>> held = jdbc.sql("""
-                        SELECT id, account_id, screening_result FROM foreign_remittances
-                         WHERE id > :last AND status = 'HELD' ORDER BY id""")
+                        SELECT f.id, f.account_id, a.customer_id, f.screening_result FROM foreign_remittances f
+                          JOIN accounts a ON a.id = f.account_id
+                         WHERE f.id > :last AND f.status = 'HELD' ORDER BY f.id""")
                 .param("last", lastForeign).query().listOfRows();
         long maxForeign = jdbc.sql("SELECT COALESCE(MAX(id), :last) FROM foreign_remittances").param("last", lastForeign)
                 .query(Long.class).single();
         for (Map<String, Object> f : held) {
-            long accountId = ((Number) f.get("account_id")).longValue();
-            created += alert("FOREIGN_SCREENING", accountId, "FR:" + f.get("id"), 80, String.valueOf(f.get("screening_result")));
+            created += alert(seen, "FOREIGN_SCREENING", num(f.get("account_id")), num(f.get("customer_id")),
+                    "FR:" + f.get("id"), 80, String.valueOf(f.get("screening_result")));
         }
 
         jdbc.sql("""
                         UPDATE aml_scan_cursor SET last_transaction_id = :tx, last_authorization_id = :auth,
                                last_foreign_id = :foreign WHERE id = 1""")
                 .param("tx", maxTx).param("auth", maxAuth).param("foreign", maxForeign).update();
-        log.info("aml scan: transactions={} authorizations={} alerts={}", txs.size(), auths.size(), created);
-        return new ScanReport(txs.size(), auths.size(), created);
+        log.info("aml scan: transactions={} authorizations={} alerts={}", scannedTx, auths.size(), created);
+        return new ScanReport(scannedTx, auths.size(), created);
     }
 
-    private int checkTransaction(Map<String, Object> t, long txId) {
+    private int checkTransaction(Map<String, Object> t, Set<String> seen) {
+        long txId = ((Number) t.get("id")).longValue();
         String type = (String) t.get("type");
         long amount = ((Number) t.get("amount_minor")).longValue();
-        Long source = t.get("source_account_id") == null ? null : ((Number) t.get("source_account_id")).longValue();
-        Long target = t.get("target_account_id") == null ? null : ((Number) t.get("target_account_id")).longValue();
-        OffsetDateTime at = (OffsetDateTime) jdbc.sql("SELECT created_at FROM transactions WHERE id = :id").param("id", txId)
-                .query(OffsetDateTime.class).single();
+        Long source = num(t.get("source_account_id"));
+        Long target = num(t.get("target_account_id"));
+        Long sourceCustomer = num(t.get("source_customer"));
+        Long targetCustomer = num(t.get("target_customer"));
+        OffsetDateTime at = timestamp(t.get("created_at"));
         int n = 0;
         boolean cash = "DEPOSIT".equals(type) || "WITHDRAWAL".equals(type);
-        Long cashAccount = "DEPOSIT".equals(type) ? target : source;
+        boolean deposit = "DEPOSIT".equals(type);
         if (cash && amount >= LARGE_CASH) {
-            n += alert("LARGE_CASH", cashAccount, "TX:" + txId, 60,
-                    String.format("現金%s %,d 円（200 万円以上）", "DEPOSIT".equals(type) ? "入金" : "出金", amount));
+            n += alert(seen, "LARGE_CASH", deposit ? target : source, deposit ? targetCustomer : sourceCustomer,
+                    "TX:" + txId, 60, String.format("現金%s %,d 円（200 万円以上）", deposit ? "入金" : "出金", amount));
         }
-        if ("DEPOSIT".equals(type) && amount >= STRUCT_MIN && amount < LARGE_CASH) {
+        String structRef = "STRUCT:" + target + ":" + at.toLocalDate();
+        if (deposit && amount >= STRUCT_MIN && amount < LARGE_CASH && !seen.contains("STRUCTURING|" + structRef)) {
             Map<String, Object> agg = jdbc.sql("""
                             SELECT count(*) AS n, COALESCE(SUM(amount_minor), 0) AS total FROM transactions
-                             WHERE type = 'DEPOSIT' AND status = 'COMPLETED' AND target_account_id = :a
+                             WHERE target_account_id = :a AND type = 'DEPOSIT' AND status = 'COMPLETED'
                                AND amount_minor >= :min AND amount_minor < :max
                                AND created_at > :at - interval '7 days' AND created_at <= :at""")
                     .param("a", target).param("min", STRUCT_MIN).param("max", LARGE_CASH).param("at", at)
@@ -144,7 +178,7 @@ public class AmlService {
             long count = ((Number) agg.get("n")).longValue();
             long total = ((Number) agg.get("total")).longValue();
             if (count >= 3 && total >= LARGE_CASH) {
-                n += alert("STRUCTURING", target, "STRUCT:" + target + ":" + at.toLocalDate(), 75,
+                n += alert(seen, "STRUCTURING", target, targetCustomer, structRef, 75,
                         String.format("7 日以内に 50〜200 万円未満の現金入金 %d 回・合計 %,d 円", count, total));
             }
         }
@@ -158,45 +192,49 @@ public class AmlService {
                                AND created_at >= :at - interval '2 days' AND id < :id""")
                     .param("a", source).param("at", at).param("id", txId).query(Long.class).single();
             if (inflow >= RAPID_MIN && amount * 10 >= inflow * 9) {
-                n += alert("RAPID_MOVEMENT", source, "RAPID:" + txId, 65,
+                n += alert(seen, "RAPID_MOVEMENT", source, sourceCustomer, "RAPID:" + txId, 65,
                         String.format("直前 2 日の入金 %,d 円のうち %,d 円を移動", inflow, amount));
             }
         }
-        for (Long account : new Long[]{source, target}) {
-            if (account != null && amount >= RAPID_MIN && "HIGH".equals(customerRisk(account))) {
-                n += alert("HIGH_RISK_CUSTOMER", account, "HRC:" + txId + ":" + account, 70,
+        if (amount >= RAPID_MIN) {
+            if (source != null && "HIGH".equals(t.get("source_risk"))) {
+                n += alert(seen, "HIGH_RISK_CUSTOMER", source, sourceCustomer, "HRC:" + txId + ":" + source, 70,
+                        String.format("高リスク顧客の取引 %,d 円（%s）", amount, type));
+            }
+            if (target != null && "HIGH".equals(t.get("target_risk"))) {
+                n += alert(seen, "HIGH_RISK_CUSTOMER", target, targetCustomer, "HRC:" + txId + ":" + target, 70,
                         String.format("高リスク顧客の取引 %,d 円（%s）", amount, type));
             }
         }
         return n;
     }
 
-    private int checkCard(Map<String, Object> a, long authId) {
+    private int checkCard(Map<String, Object> a, Set<String> seen) {
         long cardId = ((Number) a.get("card_id")).longValue();
-        OffsetDateTime at = ((java.sql.Timestamp) a.get("created_at")).toInstant().atOffset(java.time.ZoneOffset.UTC);
-        Map<String, Object> w = jdbc.sql("""
-                        SELECT count(*) AS total, count(*) FILTER (WHERE status = 'DECLINED') AS declined
-                          FROM card_authorizations
-                         WHERE card_id = :c AND created_at > :at - interval '10 minutes' AND created_at <= :at AND id <= :id""")
-                .param("c", cardId).param("at", at).param("id", authId).query().singleRow();
-        long accountId = jdbc.sql("SELECT account_id FROM cards WHERE id = :c").param("c", cardId).query(Long.class).single();
+        OffsetDateTime at = timestamp(a.get("created_at"));
+        long total = ((Number) a.get("total")).longValue();
+        long declined = ((Number) a.get("declined")).longValue();
+        Long accountId = num(a.get("account_id"));
+        Long customerId = num(a.get("customer_id"));
         int n = 0;
         long window = at.toEpochSecond() / 600;   // 10 分ごとの枠で 1 件にまとめる
-        if (((Number) w.get("total")).longValue() >= 5) {
-            n += alert("CARD_VELOCITY", accountId, "CARDVEL:" + cardId + ":" + window, 70,
-                    "10 分以内にオーソリ " + w.get("total") + " 回（カード#" + cardId + "）");
+        if (total >= 5) {
+            n += alert(seen, "CARD_VELOCITY", accountId, customerId, "CARDVEL:" + cardId + ":" + window, 70,
+                    "10 分以内にオーソリ " + total + " 回（カード#" + cardId + "）");
         }
-        if (((Number) w.get("declined")).longValue() >= 3) {
-            n += alert("CARD_DECLINES", accountId, "CARDDEC:" + cardId + ":" + window, 75,
-                    "10 分以内に否決 " + w.get("declined") + " 回（カード#" + cardId + "）");
+        if (declined >= 3) {
+            n += alert(seen, "CARD_DECLINES", accountId, customerId, "CARDDEC:" + cardId + ":" + window, 75,
+                    "10 分以内に否決 " + declined + " 回（カード#" + cardId + "）");
         }
         return n;
     }
 
-    /** アラートを作る（同じルール・参照は 1 件だけ）。作成した場合 1。 */
-    private int alert(String rule, Long accountId, String reference, int score, String detail) {
-        Long customerId = accountId == null ? null : jdbc.sql("SELECT customer_id FROM accounts WHERE id = :a")
-                .param("a", accountId).query(Long.class).optional().orElse(null);
+    /** アラートを作る（同じルール・参照は 1 件だけ。この回で既に試みたものは DB に問い合わせない）。作成した場合 1。 */
+    private int alert(Set<String> seen, String rule, Long accountId, Long customerId, String reference, int score,
+                      String detail) {
+        if (!seen.add(rule + "|" + reference)) {
+            return 0;
+        }
         return jdbc.sql("""
                         INSERT INTO aml_alerts (rule, customer_id, account_id, reference, score, detail)
                         VALUES (:rule, :c, :a, :ref, :score, :detail)
@@ -206,9 +244,16 @@ public class AmlService {
                 .update();
     }
 
-    private String customerRisk(long accountId) {
-        return jdbc.sql("SELECT c.aml_risk FROM customers c JOIN accounts a ON a.customer_id = c.id WHERE a.id = :a")
-                .param("a", accountId).query(String.class).optional().orElse(null);
+    private static Long num(Object v) {
+        return v == null ? null : ((Number) v).longValue();
+    }
+
+    /** listOfRows は timestamptz を Timestamp か OffsetDateTime で返す（ドライバ設定による）ので両方を受ける。 */
+    private static OffsetDateTime timestamp(Object v) {
+        if (v instanceof OffsetDateTime o) {
+            return o;
+        }
+        return ((java.sql.Timestamp) v).toInstant().atOffset(java.time.ZoneOffset.UTC);
     }
 
     // ================================================================== 案件管理

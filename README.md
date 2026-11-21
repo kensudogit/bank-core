@@ -232,7 +232,9 @@ Java 側の加減算は `Math.addExact` などでオーバーフローを検出�
 | 再読込をなくす | ステータス更新を `UPDATE ... RETURNING` にして結果をそのまま返す |
 | `lock_timeout` を接続単位に | 取引ごとの `SET` を省く |
 | Outbox の配信済み更新を 1 文に | `UPDATE ... WHERE id IN (...)`（行ロックはコミットまで保持しているので安全） |
-| 日次締めの並行化 | 口座ごとに独立した取引なので `bank.closing.parallelism`（既定 4）本で並行計上。計上済み口座は 1 クエリでまとめて取得し、冪等キーの前方一致検索用に `text_pattern_ops` の部分インデックスを追加（V3） |
+| 日次締めの並行化 | 口座ごとに独立した取引なので `bank.closing.parallelism`（既定 8、接続プール 20 未満）本で並行計上。計上済み口座は 1 クエリでまとめて取得し、冪等キーの前方一致検索用に `text_pattern_ops` の部分インデックスを追加（V3） |
+| 融資の自動引落しの絞り込みと並行化 | 期日到来・未引落しの融資を 1 本の SQL で絞ってから、**返済口座ごと**に並行実行（同じ口座の融資は 1 タスクで順に処理し、支払可能額を取り合わない） |
+| AML 監視を集合指向に | ルールに該当し得ない取引（50 万円未満・外貨）は SQL で除外し、顧客リスクは JOIN で、カードの直近 10 分の件数・否決数は `LATERAL` で 1 本にまとめて取得。同じ（ルール, 参照）への INSERT は検査中に 1 回だけ |
 
 振込 1 件あたりの DB 往復は約 17 回から 7 回（＋コミット）に、ロック保持中の往復は約 10 回から 4 回になりました。
 `ThroughputBenchmarkTest`（Testcontainers 上の PostgreSQL、16 スレッド、各 8,000 件）での計測結果は次のとおりです。
@@ -247,6 +249,25 @@ Java 側の加減算は `Math.addExact` などでオーバーフローを検出�
 
 ```powershell
 .\mvnw.cmd test "-Dtest=ThroughputBenchmarkTest" "-Dbench=true" "-Dsurefire.failIfNoSpecifiedTests=false"
+```
+
+業務機能を実用的な件数（口座 2,000・融資 300・振込 30,000・カードのオーソリ 4,000）で計測する
+`OperationsBenchmarkTest` の結果は次のとおりです。
+
+| 処理 | 改善前 | 改善後 |
+|---|---|---|
+| AML 監視（取引 32,000 件・オーソリ 4,000 件） | 25.6 秒 | **1.7 秒** |
+| 日次締め 合計（利息 2,000 口座・融資 300 件の約定返済日） | 10.5 秒 | **5.0 秒** |
+| └ 利息計上 | 3.2 秒 | 1.9 秒 |
+| └ 融資の自動引落し | 4.4 秒 | 2.1 秒 |
+| 振込 / カードのオーソリ / 融資の申込〜実行 | 1,392 / 727 / 168 件/秒 | 1,554 / 761 / 216 件/秒（変更なし、誤差の範囲） |
+| 照合 / リスク管理ダッシュボード / 顧客 360°×50 | 104 / 74 / 398 ms | 88 / 82 / 515 ms（変更なし、誤差の範囲） |
+
+ステップごとの時間は DB の `now()` で記録するため、Docker Desktop のコンテナ時計の揺れ（1 秒前後）の影響を受けます。
+合計はアプリ側で計測しています。
+
+```powershell
+.\mvnw.cmd test "-Dtest=OperationsBenchmarkTest" "-Dbench=true" "-Dsurefire.failIfNoSpecifiedTests=false"
 ```
 
 コミット時の WAL 同期（`synchronous_commit`）を緩めればさらに速くなりますが、コミット済み取引が障害時に失われうるため勘定系では変更していません。
@@ -388,8 +409,8 @@ Linux では `scripts/jp1/run-job.sh daily-closing JP1`。
 
 ## テスト
 
-`.\mvnw.cmd verify` で 93 件のテストが定義されています（92 件を実行。性能計測用の `ThroughputBenchmarkTest` は
-`-Dbench=true` を付けたときだけ実行）。DB を使うテストはすべて Testcontainers の実 PostgreSQL に対して実行します。
+`.\mvnw.cmd verify` で 94 件のテストが定義されています（92 件を実行。性能計測用の `ThroughputBenchmarkTest` と
+`OperationsBenchmarkTest` は `-Dbench=true` を付けたときだけ実行）。DB を使うテストはすべて Testcontainers の実 PostgreSQL に対して実行します。
 
 | テストクラス | 内容 |
 |---|---|

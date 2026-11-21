@@ -220,7 +220,7 @@ public class DailyClosingService {
                         + r.insufficientFunds() + " 件・取引なし " + r.noTransaction() + " 件"));
             });
             step(date, Step.LOAN_AUTO_DEBIT, () -> {
-                LoanService.AutoDebitReport r = loans.autoDebit(date);
+                LoanService.AutoDebitReport r = loans.autoDebit(date, parallelism);
                 return new Result<>(r, new StepOutcome(r.debited(), "期日到来 " + r.loansDue() + " 件・引落し "
                         + r.debited() + " 件・不足 " + r.shortfall() + " 件"));
             });

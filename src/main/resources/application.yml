@@ -29,8 +29,9 @@ bank:
     # 日次締めで計上する普通預金利息の年利（bp、100 = 1.00%）。デモ用に高めの値
     annual-rate-bp: 100
   closing:
-    # 日次締めの利息計上を並行実行するスレッド数（口座ごとに独立した取引なので並行化できる）
-    parallelism: 4
+    # 日次締めの利息計上・融資の自動引落しを並行実行するスレッド数（口座ごとに独立した取引なので並行化できる。
+    # 接続プール maximum-pool-size より小さくする）
+    parallelism: 8
     # 照合に合格した締めを、実行者とは別の人が承認してから業務日付を進める（運用統制）
     approval-required: ${CLOSING_APPROVAL_REQUIRED:true}
   transfer:

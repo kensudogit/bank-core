@@ -17,6 +17,9 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -294,6 +297,27 @@ public class LoanRepository {
     public List<Long> openLoanIds() {
         return jdbc.sql("SELECT id FROM loans WHERE status IN ('ACTIVE', 'DELINQUENT') ORDER BY id")
                 .query(Long.class).list();
+    }
+
+    /**
+     * 自動引落しの対象（期日の来た未払いの返済予定があり、この業務日付の引落しがまだ記録されていない融資）を
+     * 返済口座ごとにまとめて返す。キーは口座 ID、値は融資 ID（昇順）。
+     */
+    public Map<Long, List<Long>> autoDebitCandidatesByAccount(LocalDate businessDate, String keyPrefix) {
+        Map<Long, List<Long>> byAccount = new LinkedHashMap<>();
+        jdbc.sql("""
+                        SELECT l.id, l.account_id FROM loans l
+                         WHERE l.status IN ('ACTIVE', 'DELINQUENT')
+                           AND EXISTS (SELECT 1 FROM loan_installments i
+                                        WHERE i.loan_id = l.id AND i.status IN ('SCHEDULED', 'PARTIAL') AND i.due_date <= :d)
+                           AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.idempotency_key = :prefix || l.id)
+                         ORDER BY l.account_id, l.id""")
+                .param("d", businessDate).param("prefix", keyPrefix)
+                .query((rs, i) -> {
+                    byAccount.computeIfAbsent(rs.getLong("account_id"), k -> new ArrayList<>()).add(rs.getLong("id"));
+                    return null;
+                }).list();
+        return byAccount;
     }
 
     public int countDelinquent(long accountId) {

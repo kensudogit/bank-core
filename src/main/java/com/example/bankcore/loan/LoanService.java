@@ -39,7 +39,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -403,34 +409,74 @@ public class LoanService {
      * 冪等キーを {@code loan-autodebit-<業務日付>-<融資ID>} と決めるので、締めを再実行しても二重に引き落とさない。
      */
     public AutoDebitReport autoDebit(LocalDate businessDate) {
-        int due = 0;
-        int debited = 0;
-        int shortfall = 0;
-        for (long loanId : loans.openLoanIds()) {
-            String key = "loan-autodebit-" + businessDate + "-" + loanId;
-            // 再実行時、この業務日付の引落しが記録済みなら何もしない（残高が変わって金額が違っても二重に引き落とさない）
-            if (transactions.findByIdempotencyKey(key).isPresent()) {
-                continue;
+        return autoDebit(businessDate, 1);
+    }
+
+    /**
+     * @param parallelism 並行数。同じ返済口座の融資は 1 つのタスクで順に処理する（支払可能額を融資間で取り合わない）。
+     *                    口座が違えばロックが重ならないので並行に引き落とせる
+     */
+    public AutoDebitReport autoDebit(LocalDate businessDate, int parallelism) {
+        String keyPrefix = "loan-autodebit-" + businessDate + "-";
+        // 期日の来ていない融資・この業務日付に引落し済みの融資は 1 本の SQL で除く（融資ごとの照会をしない）
+        Map<Long, List<Long>> byAccount = loans.autoDebitCandidatesByAccount(businessDate, keyPrefix);
+        AtomicInteger due = new AtomicInteger();
+        AtomicInteger debited = new AtomicInteger();
+        AtomicInteger shortfall = new AtomicInteger();
+        Consumer<List<Long>> perAccount = loanIds -> {
+            for (long loanId : loanIds) {
+                String key = keyPrefix + loanId;
+                LoanDetail d = get(loanId);
+                if (d.amountDueMinor() == 0) {
+                    continue;
+                }
+                due.incrementAndGet();
+                long available = accounts.findById(d.loan().accountId()).map(Account::availableBalanceMinor).orElse(0L);
+                long amount = Math.min(d.amountDueMinor(), Math.max(0, available));
+                if (amount < d.amountDueMinor()) {
+                    shortfall.incrementAndGet();
+                }
+                if (amount == 0) {
+                    continue;
+                }
+                LoanResult r = repay(loanId, amount, key, null);
+                if (r.transaction().status() == com.example.bankcore.transaction.TransactionStatus.COMPLETED) {
+                    debited.incrementAndGet();
+                }
             }
-            LoanDetail d = get(loanId);
-            if (d.amountDueMinor() == 0) {
-                continue;
-            }
-            due++;
-            long available = accounts.findById(d.loan().accountId()).map(Account::availableBalanceMinor).orElse(0L);
-            long amount = Math.min(d.amountDueMinor(), Math.max(0, available));
-            if (amount < d.amountDueMinor()) {
-                shortfall++;
-            }
-            if (amount == 0) {
-                continue;
-            }
-            LoanResult r = repay(loanId, amount, key, null);
-            if (r.transaction().status() == com.example.bankcore.transaction.TransactionStatus.COMPLETED) {
-                debited++;
+        };
+        List<List<Long>> groups = new ArrayList<>(byAccount.values());
+        int threads = Math.max(1, Math.min(parallelism, groups.size()));
+        if (threads == 1) {
+            groups.forEach(perAccount);
+        } else {
+            ExecutorService pool = Executors.newFixedThreadPool(threads);
+            try {
+                List<Future<?>> futures = new ArrayList<>();
+                for (List<Long> g : groups) {
+                    futures.add(pool.submit(() -> perAccount.accept(g)));
+                }
+                RuntimeException first = null;
+                for (Future<?> f : futures) {
+                    try {
+                        f.get();
+                    } catch (ExecutionException e) {
+                        if (first == null) {
+                            first = e.getCause() instanceof RuntimeException re ? re : new IllegalStateException(e.getCause());
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("interrupted", e);
+                    }
+                }
+                if (first != null) {
+                    throw first;   // 引落し済みの分はコミット済み。残りは再実行で拾う（冪等キーで二重にならない）
+                }
+            } finally {
+                pool.shutdown();
             }
         }
-        return new AutoDebitReport(businessDate, due, debited, shortfall);
+        return new AutoDebitReport(businessDate, due.get(), debited.get(), shortfall.get());
     }
 
     // ================================================================== queries
