@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: bank-core
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:15432/bankcore}
+    username: ${DB_USER:bankcore}
+    password: ${DB_PASSWORD:bankcore}
+    hikari:
+      maximum-pool-size: 20
+      # 行ロック待ちの上限を接続単位で設定する（取引ごとに SET を送る往復を省く）
+      connection-init-sql: "SET lock_timeout = '${bank.transfer.lock-timeout-ms:5000}ms'"
+  flyway:
+    enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+bank:
+  interest:
+    # 日次締めで計上する普通預金利息の年利（bp、100 = 1.00%）。デモ用に高めの値
+    annual-rate-bp: 100
+  closing:
+    # 日次締めの利息計上を並行実行するスレッド数（口座ごとに独立した取引なので並行化できる）
+    parallelism: 4
+    # 照合に合格した締めを、実行者とは別の人が承認してから業務日付を進める（運用統制）
+    approval-required: ${CLOSING_APPROVAL_REQUIRED:true}
+  transfer:
+    # 行ロック待ちの上限（これを超えたら一時エラーとして再試行）
+    lock-timeout-ms: 5000
+    # ロック取得失敗時のリトライ回数（冪等キーがあるので再実行は安全）
+    max-attempts: 3
+  outbox:
+    scheduler-enabled: ${OUTBOX_SCHEDULER_ENABLED:true}
+    poll-interval-ms: 1000
+    batch-size: 100
+
+logging:
+  level:
+    com.example.bankcore: INFO

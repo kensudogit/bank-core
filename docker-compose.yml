@@ -1,0 +1,36 @@
+name: bank-core
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bankcore
+      POSTGRES_USER: bankcore
+      POSTGRES_PASSWORD: bankcore
+      TZ: Asia/Tokyo
+    ports:
+      # ホストの 5432 は他用途で使われている想定のため 15432 に公開
+      - "15432:5432"
+    volumes:
+      - bankcore-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankcore -d bankcore"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/bankcore
+      DB_USER: bankcore
+      DB_PASSWORD: bankcore
+      TZ: Asia/Tokyo
+    ports:
+      - "18080:8080"
+
+volumes:
+  bankcore-db:

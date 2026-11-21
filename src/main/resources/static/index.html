@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bank-core デモ</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #dde1e8;
+    --accent: #1f5fbf; --accent-text: #ffffff; --ok: #1b7f3b; --ng: #b3261e; --warn: #9a6400;
+    --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1d2128; --text: #e6e9ef; --muted: #9aa3b2; --line: #2e343e;
+      --accent: #5b9bff; --accent-text: #0b1220; --ok: #5cc982; --ng: #ff7b72; --warn: #e3b341;
+      --code: #262b33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.6 system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel);
+           display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px;
+         grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+  section.wide { grid-column: 1 / -1; }
+  h2 { margin: 0 0 12px; font-size: 15px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 2px; }
+  input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+                  background: var(--bg); color: var(--text); font: inherit; }
+  .row { display: flex; gap: 8px; align-items: end; }
+  .row > * { flex: 1; min-width: 0; }
+  .row > .fit { flex: 0 0 auto; }
+  button { white-space: nowrap; }
+  button { padding: 7px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
+           color: var(--accent-text); font: inherit; cursor: pointer; }
+  button.sub { background: transparent; color: var(--accent); }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
+  .ok { color: var(--ok); } .ng { color: var(--ng); } .warn { color: var(--warn); }
+  .result { margin-top: 12px; font-size: 12px; }
+  pre { background: var(--code); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 6px 0 0; max-height: 240px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  code { background: var(--code); padding: 0 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>bank-core 勘定系デモ</h1>
+    <p>教育用サンプル：預金口座・行内振込・複式簿記・冪等性・Transactional Outbox（本番システムではありません）</p>
+  </div>
+  <div>
+    <span id="bizDate" class="badge">業務日付 -</span>
+    <span id="health" class="badge warn">確認中</span>
+    <span id="recon" class="badge warn">照合 未実行</span>
+  </div>
+</header>
+
+<main>
+  <section class="wide">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">口座一覧</h2>
+      <div class="fit"><button class="sub small" onclick="refresh()">更新</button></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>ID</th><th>口座番号</th><th>名義</th><th>通貨</th>
+          <th class="num">記帳残高</th><th class="num">支払可能額</th><th>状態</th><th></th>
+        </tr></thead>
+        <tbody id="accounts"><tr><td colspan="8" class="hint">読み込み中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>口座開設</h2>
+    <label for="ownerName">名義</label>
+    <input id="ownerName" value="山田 太郎">
+    <div class="row">
+      <div><label for="openCurrency">通貨</label><input id="openCurrency" value="JPY"></div>
+      <div><label for="overdraft">当座貸越枠</label><input id="overdraft" type="number" min="0" value="0"></div>
+    </div>
+    <div class="actions"><button onclick="openAccount()">開設</button></div>
+    <div id="openResult" class="result"></div>
+  </section>
+
+  <section>
+    <h2>現金 入金 / 出金</h2>
+    <div class="row">
+      <div><label for="cashAccount">口座</label><select id="cashAccount"></select></div>
+      <div><label for="cashAmount">金額</label><input id="cashAmount" type="number" min="1" value="10000"></div>
+    </div>
+    <label for="cashKey">Idempotency-Key</label>
+    <div class="row"><input id="cashKey"><div class="fit"><button class="sub small" onclick="newKey('cashKey')">新しいキー</button></div></div>
+    <div class="actions">
+      <button onclick="cash('deposits')">入金</button>
+      <button onclick="cash('withdrawals')">出金</button>
+    </div>
+    <div id="cashResult" class="result"></div>
+  </section>
+
+  <section>
+    <h2>行内振込</h2>
+    <div class="row">
+      <div><label for="trfFrom">振込元</label><select id="trfFrom"></select></div>
+      <div><label for="trfTo">振込先</label><select id="trfTo"></select></div>
+    </div>
+    <div class="row">
+      <div><label for="trfAmount">金額</label><input id="trfAmount" type="number" min="1" value="3000"></div>
+      <div><label for="trfMemo">メモ</label><input id="trfMemo" placeholder="任意"></div>
+    </div>
+    <label for="trfKey">Idempotency-Key</label>
+    <div class="row"><input id="trfKey"><div class="fit"><button class="sub small" onclick="newKey('trfKey')">新しいキー</button></div></div>
+    <div class="actions"><button onclick="transfer()">振込</button></div>
+    <p class="hint">同じキーのまま再度押すと、二重に振り込まれず最初の結果が返ります（<code>Idempotent-Replayed: true</code>）。
+      キーを変えずに金額を変えると 409 になります。</p>
+    <div id="trfResult" class="result"></div>
+  </section>
+
+  <section>
+    <h2>入出金明細 <span id="stmtTitle" class="hint"></span></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>業務日付</th><th>取引ID</th><th>摘要</th><th class="num">出金（借方）</th><th class="num">入金（貸方）</th><th></th></tr></thead>
+        <tbody id="statement"><tr><td colspan="6" class="hint">口座一覧の「明細」を押してください</td></tr></tbody>
+      </table>
+    </div>
+    <p class="hint">「取消」は元の仕訳を変更せず、貸借を入れ替えた反対仕訳を新しい取引として記帳します。二度目の取消は 409 になります。</p>
+    <div id="revResult" class="result"></div>
+  </section>
+
+  <section>
+    <h2>日次締め（バッチ）</h2>
+    <p class="hint" style="margin-top:0">現在の業務日付で利息計上・口座振替・融資の自動引落し・延滞管理・有価証券・信託・加盟店精算・AML 監視を行い、
+      照合に合格すると承認待ちになります。<b>締めの実行者とは別の人</b>が承認すると業務日付が翌日に進みます
+      （照合が不一致なら日付は進みません）。途中で失敗しても再実行で続きから処理され、二重計上しません。</p>
+    <div class="row">
+      <div><label for="closingOperator">実行者</label><input id="closingOperator" value="operator1"></div>
+      <div><label for="closingApprover">承認者</label><input id="closingApprover" value="supervisor1"></div>
+    </div>
+    <div class="actions">
+      <button onclick="runClosing()">日次締めを実行</button>
+      <button class="sub" onclick="approveClosing()">承認</button>
+      <button class="sub" onclick="rejectClosing()">差戻し</button>
+      <button class="sub" onclick="closingStatus()">状態を表示</button>
+    </div>
+    <div id="closingResult" class="result"></div>
+  </section>
+
+  <section>
+    <h2>照合（リコンサイル）</h2>
+    <div class="actions" style="margin-top:0"><button class="sub" onclick="reconcile()">照合を実行</button></div>
+    <div id="reconResult" class="result"></div>
+  </section>
+
+  <section class="wide">
+    <h2>API</h2>
+    <p class="hint">このページは REST API を呼び出しているだけです。主なエンドポイント：
+      <code>POST /api/accounts</code> <code>GET /api/accounts</code> <code>POST /api/deposits</code>
+      <code>POST /api/withdrawals</code> <code>POST /api/transfers</code> <code>GET /api/transactions/{id}</code>
+      <code>GET /api/transactions?idempotencyKey=…</code> <code>POST /api/transactions/{id}/reversal</code>
+      <code>POST /api/batch/daily-closing</code> <code>POST /api/batch/daily-closings/{date}/approval</code>
+      <code>POST /api/batch/jobs/{job}</code> <code>GET /api/business-date</code> <code>GET /api/reconciliation</code>
+      <code>/api/loan-applications</code> <code>/api/loans</code> <code>/api/domestic-remittances</code>
+      <code>/api/fx-exchanges</code> <code>/api/securities</code> <code>/api/funds</code> <code>/api/cards</code>
+      <code>/api/customers</code> <code>/api/risk/dashboard</code> <code>/api/aml/alerts</code>（詳しくは README）
+      <code>GET /actuator/health</code>。資金移動の POST には <code>Idempotency-Key</code> ヘッダーが必須です。</p>
+  </section>
+</main>
+
+<script>
+  const fmt = n => Number(n).toLocaleString('ja-JP');
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
+  let accounts = [];
+
+  function newKey(id) { document.getElementById(id).value = uuid(); }
+
+  async function call(method, path, body, headers = {}) {
+    const res = await fetch(path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json', ...headers } : headers,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* 本文なし */ }
+    return { status: res.status, replayed: res.headers.get('Idempotent-Replayed'), data };
+  }
+
+  function showResult(elId, r) {
+    const cls = r.status < 300 ? 'ok' : (r.status === 422 ? 'warn' : 'ng');
+    const replay = r.replayed == null ? '' :
+      ` / Idempotent-Replayed: <b>${esc(r.replayed)}</b>`;
+    document.getElementById(elId).innerHTML =
+      `<span class="badge ${cls}">HTTP ${r.status}</span>${replay}<pre>${esc(JSON.stringify(r.data, null, 2))}</pre>`;
+  }
+
+  function fillSelect(id, keep) {
+    const sel = document.getElementById(id);
+    const prev = sel.value;
+    sel.innerHTML = accounts.map(a =>
+      `<option value="${a.id}">${esc(a.accountNumber)} ${esc(a.ownerName)}（${fmt(a.postedBalanceMinor)} ${esc(a.currency)}）</option>`).join('');
+    if (prev && accounts.some(a => String(a.id) === prev)) sel.value = prev;
+    else if (keep !== undefined && accounts[keep]) sel.value = accounts[keep].id;
+  }
+
+  async function refresh() {
+    const r = await call('GET', '/api/accounts');
+    accounts = r.data || [];
+    const tbody = document.getElementById('accounts');
+    tbody.innerHTML = accounts.length === 0
+      ? '<tr><td colspan="8" class="hint">口座がありません。「口座開設」から作成してください。</td></tr>'
+      : accounts.map(a => `<tr>
+          <td>${a.id}</td><td>${esc(a.accountNumber)}</td><td>${esc(a.ownerName)}</td><td>${esc(a.currency)}</td>
+          <td class="num">${fmt(a.postedBalanceMinor)}</td><td class="num">${fmt(a.availableBalanceMinor)}</td>
+          <td><span class="badge ${a.status === 'ACTIVE' ? 'ok' : 'ng'}">${esc(a.status)}</span></td>
+          <td>
+            <button class="sub small" onclick="statement(${a.id})">明細</button>
+            ${a.status === 'CLOSED' ? '' : `<button class="sub small" onclick="toggleFreeze(${a.id}, '${a.status}')">${a.status === 'ACTIVE' ? '凍結' : '凍結解除'}</button>`}
+          </td></tr>`).join('');
+    fillSelect('cashAccount', 0);
+    fillSelect('trfFrom', 0);
+    fillSelect('trfTo', 1);
+  }
+
+  async function openAccount() {
+    const r = await call('POST', '/api/accounts', {
+      ownerName: document.getElementById('ownerName').value,
+      currency: document.getElementById('openCurrency').value,
+      overdraftLimitMinor: Number(document.getElementById('overdraft').value || 0)
+    });
+    showResult('openResult', r);
+    await refresh();
+  }
+
+  async function cash(kind) {
+    const account = accounts.find(a => String(a.id) === document.getElementById('cashAccount').value);
+    if (!account) return;
+    const r = await call('POST', '/api/' + kind, {
+      accountId: account.id,
+      amountMinor: Number(document.getElementById('cashAmount').value),
+      currency: account.currency
+    }, { 'Idempotency-Key': document.getElementById('cashKey').value });
+    showResult('cashResult', r);
+    await refresh();
+  }
+
+  async function transfer() {
+    const from = accounts.find(a => String(a.id) === document.getElementById('trfFrom').value);
+    const to = document.getElementById('trfTo').value;
+    if (!from || !to) return;
+    const memo = document.getElementById('trfMemo').value;
+    const r = await call('POST', '/api/transfers', {
+      sourceAccountId: from.id,
+      targetAccountId: Number(to),
+      amountMinor: Number(document.getElementById('trfAmount').value),
+      currency: from.currency,
+      memo: memo || null
+    }, { 'Idempotency-Key': document.getElementById('trfKey').value, 'X-Correlation-Id': 'demo-ui' });
+    showResult('trfResult', r);
+    await refresh();
+  }
+
+  async function statement(id) {
+    const a = accounts.find(x => x.id === id);
+    document.getElementById('stmtTitle').textContent = a ? `${a.accountNumber} ${a.ownerName}` : '';
+    const r = await call('GET', `/api/accounts/${id}/statement`);
+    const rows = r.data || [];
+    document.getElementById('statement').innerHTML = rows.length === 0
+      ? '<tr><td colspan="6" class="hint">明細はありません</td></tr>'
+      : rows.map(l => `<tr><td>${esc(l.businessDate)}</td><td>${l.transactionId}</td><td>${esc(l.description)}</td>
+          <td class="num">${l.debitMinor ? fmt(l.debitMinor) : ''}</td><td class="num">${l.creditMinor ? fmt(l.creditMinor) : ''}</td>
+          <td><button class="sub small" onclick="reverseTx(${l.transactionId}, ${id})">取消</button></td></tr>`).join('');
+  }
+
+  async function reverseTx(txId, accountId) {
+    if (!confirm(`取引 #${txId} を取り消しますか？（反対仕訳を記帳します）`)) return;
+    const r = await call('POST', `/api/transactions/${txId}/reversal`, null,
+      { 'Idempotency-Key': uuid(), 'X-Correlation-Id': 'demo-ui' });
+    showResult('revResult', r);
+    await refresh();
+    await statement(accountId);
+  }
+
+  // 直近に実行した締めの業務日付（承認・差戻し・状態表示の対象）
+  let closingDate = null;
+
+  async function runClosing() {
+    const op = encodeURIComponent(document.getElementById('closingOperator').value);
+    const r = await call('POST', '/api/batch/daily-closing?operator=' + op);
+    if (r.data && r.data.businessDate) closingDate = r.data.businessDate;
+    showResult('closingResult', r);
+    await refresh();
+    await businessDate();
+  }
+
+  async function targetClosingDate() {
+    if (closingDate) return closingDate;
+    const r = await call('GET', '/api/batch/daily-closings');
+    return r.data && r.data.length ? r.data[0].businessDate : null;
+  }
+
+  async function approveClosing() {
+    const d = await targetClosingDate();
+    if (!d) { alert('日次締めがまだ実行されていません'); return; }
+    const r = await call('POST', `/api/batch/daily-closings/${d}/approval`,
+      { approver: document.getElementById('closingApprover').value });
+    showResult('closingResult', r);
+    await refresh();
+    await businessDate();
+  }
+
+  async function rejectClosing() {
+    const d = await targetClosingDate();
+    if (!d) { alert('日次締めがまだ実行されていません'); return; }
+    const reason = prompt('差戻しの理由', '計上内容の確認が必要');
+    if (!reason) return;
+    const r = await call('POST', `/api/batch/daily-closings/${d}/rejection`,
+      { approver: document.getElementById('closingApprover').value, reason });
+    showResult('closingResult', r);
+  }
+
+  async function closingStatus() {
+    const d = await targetClosingDate();
+    if (!d) { alert('日次締めがまだ実行されていません'); return; }
+    showResult('closingResult', await call('GET', `/api/batch/daily-closings/${d}`));
+  }
+
+  async function businessDate() {
+    const r = await call('GET', '/api/business-date');
+    if (r.data) document.getElementById('bizDate').textContent = '業務日付 ' + r.data.businessDate;
+  }
+
+  async function toggleFreeze(id, status) {
+    const r = await call('POST', `/api/accounts/${id}/status`, { status: status === 'ACTIVE' ? 'FROZEN' : 'ACTIVE' });
+    if (r.status >= 300) alert(JSON.stringify(r.data));
+    await refresh();
+  }
+
+  async function reconcile() {
+    const r = await call('GET', '/api/reconciliation');
+    const badge = document.getElementById('recon');
+    const ok = r.data && r.data.ok;
+    badge.className = 'badge ' + (ok ? 'ok' : 'ng');
+    badge.textContent = ok ? '照合 OK' : '照合 不一致あり';
+    showResult('reconResult', r);
+  }
+
+  async function health() {
+    const badge = document.getElementById('health');
+    try {
+      const r = await call('GET', '/actuator/health');
+      const up = r.data && r.data.status === 'UP';
+      badge.className = 'badge ' + (up ? 'ok' : 'ng');
+      badge.textContent = up ? 'API 稼働中' : 'API 異常';
+    } catch (e) {
+      badge.className = 'badge ng'; badge.textContent = 'API 接続不可';
+    }
+  }
+
+  newKey('cashKey');
+  newKey('trfKey');
+  health();
+  businessDate();
+  refresh();
+  reconcile();
+</script>
+</body>
+</html>
