@@ -1,5 +1,13 @@
 target/
 .idea/
-.vscode/
+# VS Code はデバッグ・テスト用の共有設定だけをコミットする
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
 *.iml
 *.log
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar

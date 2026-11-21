@@ -4,3 +4,5 @@ target
 .vscode
 *.iml
 .mvn/wrapper/maven-wrapper.jar
+build/
+.gradle/

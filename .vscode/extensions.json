@@ -1,0 +1,7 @@
+{
+    // Java の言語機能・テスト実行（行番号の横の ▷）・デバッガー・Gradle
+    "recommendations": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-gradle"
+    ]
+}

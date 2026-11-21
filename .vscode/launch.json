@@ -1,0 +1,32 @@
+{
+    // テストメソッドのデバッグは、行番号の横の ▷ をクリックする（launch.json は不要）。
+    // ここにはアプリ本体をデバッグする構成を置く。
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // アプリを VS Code から起動してデバッグする（DB は docker compose の db を使う）
+            "type": "java",
+            "name": "bank-core: アプリをデバッグ起動",
+            "request": "launch",
+            "mainClass": "com.example.bankcore.BankCoreApplication",
+            "projectName": "bank-core",
+            "env": {
+                "DB_URL": "jdbc:postgresql://localhost:15432/bankcore",
+                "DB_USER": "bankcore",
+                "DB_PASSWORD": "bankcore",
+                // Docker のアプリ（18080）と並べて動かせるよう 8081 で起動する
+                "SERVER_PORT": "8081"
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            // .\gradlew.bat bootRun --debug-jvm や test --debug-jvm で待ち受けている JVM に接続する
+            "type": "java",
+            "name": "bank-core: Gradle のデバッグ待ち受けに接続（5005）",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005,
+            "projectName": "bank-core"
+        }
+    ]
+}

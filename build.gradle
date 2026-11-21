@@ -1,0 +1,54 @@
+// Gradle ビルド（pom.xml と同じ依存関係）。VS Code はこちらでプロジェクトを読み込み、
+// テストメソッドの行番号の横の ▷ から実行・デバッグ（ステップ実行）できる。README の「デバッグ」を参照。
+// Docker イメージのビルドは引き続き Maven（mvnw）を使う。
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.7'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.1.0-SNAPSHOT'
+description = 'Educational core-banking sample'
+
+// Gradle を動かしている JDK（21 以上）で Java 21 向けにコンパイルする（pom.xml の java.version と同じ）
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+    // Spring の @PathVariable などが引数名を使うため（Maven の spring-boot-starter-parent と同じ）
+    options.compilerArgs << '-parameters'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // 性能計測（-Dbench=true）を Maven と同じ指定で有効にする: .\gradlew.bat test -Dbench=true --tests '*BenchmarkTest'
+    systemProperty 'bench', System.getProperty('bench', 'false')
+    testLogging {
+        events 'failed', 'skipped'
+        exceptionFormat = 'full'
+    }
+}

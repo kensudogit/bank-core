@@ -74,6 +74,36 @@ Docker Desktop が起動している状態で：
 （macOS / Linux / Git Bash では `./mvnw verify`）。テストは Testcontainers で `postgres:16-alpine` を起動し、
 **実際の PostgreSQL** に対して実行します。インメモリ DB やモックは使いません。
 
+Gradle でも同じテストを実行できます（`build.gradle` は `pom.xml` と同じ依存関係。Docker イメージのビルドは Maven のまま）。
+
+```powershell
+.\gradlew.bat test
+```
+
+### デバッグ（VS Code + Gradle）
+
+VS Code でこのフォルダーを開くと、`.vscode/settings.json` により **Gradle で** プロジェクトを読み込みます
+（推奨拡張機能：Extension Pack for Java・Gradle for Java。`.vscode/extensions.json` で案内されます）。
+
+1. テストクラスを開くと、**行番号の横に ▷** が表示されます（テストクラスの行と各 `@Test` メソッドの行）。
+2. 調べたいコード（例：`LoanService.repay` の中）の行番号の左をクリックしてブレークポイント（赤丸）を置きます。
+3. テストメソッドの行の ▷ をクリックすると、**そのメソッドだけをデバッグ実行**します
+   （`testing.defaultGutterClickAction = debug`。右クリックで通常の実行やカバレッジ付きの実行も選べます）。
+4. ブレークポイントで止まったら、F10（ステップオーバー）・F11（ステップイン）・Shift+F11（ステップアウト）・F5（続行）で
+   1 行ずつ進めます。変数の値はエディタ内と「変数」ビューに表示されます。JDK とライブラリの中には入りません。
+
+統合テストは Testcontainers で PostgreSQL を起動するので、Docker Desktop を起動しておいてください。
+アプリ本体のデバッグには「実行とデバッグ」ビューの構成を使います（`.vscode/launch.json`）。
+
+| 構成 | 内容 |
+|---|---|
+| bank-core: アプリをデバッグ起動 | `BankCoreApplication` を 8081 番で起動（DB は docker compose の `localhost:15432`）。API を呼ぶとブレークポイントで止まる |
+| bank-core: Gradle のデバッグ待ち受けに接続（5005） | 次のコマンドで待ち受けている JVM に接続する |
+
+```powershell
+.\gradlew.bat test --tests "com.example.bankcore.loan.LoanServiceTest" --debug-jvm
+```
+
 ## API の使い方（PowerShell の例）
 
 ```powershell
@@ -409,7 +439,7 @@ Linux では `scripts/jp1/run-job.sh daily-closing JP1`。
 
 ## テスト
 
-`.\mvnw.cmd verify` で 94 件のテストが定義されています（92 件を実行。性能計測用の `ThroughputBenchmarkTest` と
+`.\mvnw.cmd verify` で 342 件のテストが定義されています（340 件を実行。性能計測用の `ThroughputBenchmarkTest` と
 `OperationsBenchmarkTest` は `-Dbench=true` を付けたときだけ実行）。DB を使うテストはすべて Testcontainers の実 PostgreSQL に対して実行します。
 
 | テストクラス | 内容 |
@@ -433,6 +463,16 @@ Linux では `scripts/jp1/run-job.sh daily-closing JP1`。
 | `CardsIntegrationTest` | オーソリの拘束・再送・日次限度額・否決、売上確定・取消、電子マネー、加盟店精算（1 回だけ） |
 | `CrmIntegrationTest` | 顧客登録・KYC・口座の紐づけ・案件の進捗・顧客 360° |
 | `AmlAndRiskIntegrationTest` | 監視ルールが 1 回ずつ発報・届出で顧客リスク HIGH と口座凍結、市場リスク（VaR・外貨持ち高）と流動性 |
+
+上の業務シナリオのテストに加えて、`src/main/java` の**すべてのクラス（65 個）に同じ名前の `〇〇Test`** があります
+（例：`Account` → `AccountTest`、`LoanService` → `LoanServiceTest`）。クラスごとのテストの方針は次のとおりです。
+
+| 対象 | テストの方法 |
+|---|---|
+| レコード・列挙・計算（`Account`、`JournalLine`、`MovementCommand`、`BorrowerClass`、`Zengin`、`Screening` など） | DB を使わない単体テスト。境界値（延滞日数の区分・手数料の段階・固定長の桁数など）を確かめる |
+| リポジトリ・サービス（`AccountRepository`、`LoanService`、`PaymentService`、`AmlService` など） | 実 PostgreSQL の統合テスト。業務ルール・冪等性・状態遷移・照合の一致を確かめる |
+| コントローラー（`AccountController`、`LoanController`、`PaymentController` など） | MockMvc で HTTP ステータス・入力検証・`Idempotent-Replayed` ヘッダーを確かめる |
+| 設定・起動（`BankProperties`、`OutboxScheduler`、`BatchJobRunner`） | `Binder`・`ApplicationContextRunner`・Mockito で既定値と有効化の条件を確かめる |
 
 ## このサンプルで扱っていないこと
 

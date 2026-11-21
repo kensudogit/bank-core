@@ -1,0 +1,34 @@
+{
+    // pom.xml と build.gradle の両方があるため、VS Code（Java 拡張）は Gradle で読み込む
+    "java.import.gradle.enabled": true,
+    "java.import.gradle.wrapper.enabled": true,
+    "java.import.maven.enabled": false,
+    "java.configuration.updateBuildConfiguration": "automatic",
+
+    // 行番号の横の ▷（テストメソッド・テストクラス）をクリックしたら「デバッグ実行」する。
+    // ブレークポイントで止まり、F10（ステップオーバー）/ F11（ステップイン）/ Shift+F11（ステップアウト）で進める。
+    // 右クリックで「テストの実行」「カバレッジ付きで実行」も選べる。
+    "testing.gutterEnabled": true,
+    "testing.defaultGutterClickAction": "debug",
+    "testing.openTesting": "openOnTestFailure",
+
+    // メソッドの上の「Run | Debug」表示（main メソッドとテスト）
+    "java.debug.settings.enableRunDebugCodeLens": true,
+    "java.test.editor.enableShortcuts": true,
+
+    // デバッグ時の表示：変数の値をエディタ内に表示し、ステップ実行中に JDK・ライブラリの中へ入らない
+    "debug.inlineValues": "on",
+    "java.debug.settings.showStaticVariables": true,
+    "java.debug.settings.showQualifiedNames": false,
+    "java.debug.settings.stepping.skipClasses": ["$JDK", "$Libraries", "java.lang.ClassLoader"],
+    "java.debug.settings.stepping.skipSynthetics": true,
+    "java.debug.settings.stepping.skipStaticInitializers": true,
+    "java.debug.settings.hotCodeReplace": "auto",
+
+    "files.encoding": "utf8",
+    "files.exclude": {
+        "**/target": true,
+        "**/build": true,
+        "**/.gradle": true
+    }
+}
