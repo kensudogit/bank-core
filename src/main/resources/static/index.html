@@ -52,6 +52,89 @@
   pre { background: var(--code); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 6px 0 0; max-height: 240px; }
   .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
   code { background: var(--code); padding: 0 4px; border-radius: 4px; }
+
+  /* ================= 利用手順パネル（ドラッグで移動・▼▲で開閉・×で閉じる） ================= */
+  .guide-open { padding: 4px 12px; border-radius: 999px; border: 1px solid #0f766e; background: #0f766e;
+                color: #fff; font-weight: 700; margin-left: 8px; }
+  .ug-panel {
+    --ug-ink: #0c1f1a; --ug-muted: #5a6f68; --ug-accent: #0f766e; --ug-accent-deep: #115e59; --ug-line: #e2e8f0;
+    position: fixed; right: 1rem; top: 4.5rem; z-index: 60;
+    width: min(440px, calc(100vw - 2rem)); color: var(--ug-ink);
+    border-radius: 12px; border: 1px solid var(--ug-line); background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 12px 40px rgba(12, 31, 26, 0.28); overflow: hidden; user-select: none;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif; font-size: 15px;
+  }
+  .ug-panel[hidden] { display: none; }
+  .ug-panel::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 1;
+                      background: linear-gradient(90deg, var(--ug-accent), #0d9488); }
+  .ug-panel.ug-dragging { cursor: grabbing; box-shadow: 0 18px 50px rgba(12, 31, 26, 0.35); }
+  .ug-header { display: flex; align-items: center; justify-content: space-between; gap: 0.65rem;
+               padding: 1rem 1.15rem; background: rgba(255, 255, 255, 0.92); border-bottom: 1px solid var(--ug-line);
+               cursor: grab; touch-action: none; }
+  .ug-dragging .ug-header { cursor: grabbing; }
+  .ug-header-text { display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex: 1; }
+  .ug-titles { display: flex; flex-direction: column; gap: 0.1rem; }
+  .ug-titles strong { font-size: 1.35rem; font-weight: 700; }
+  .ug-titles strong::before { content: ""; width: 5px; height: 1.05em; border-radius: 4px; display: inline-block;
+                              margin-right: 0.45rem; vertical-align: -0.15em;
+                              background: linear-gradient(180deg, var(--ug-accent), #0d9488); }
+  .ug-sub { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ug-muted); }
+  .ug-drag-hint { font-size: 0.9rem; font-weight: 600; color: var(--ug-accent); margin-left: auto; padding-right: 0.5rem; }
+  .ug-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+  .ug-panel .ug-btn { width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 999px; border: 1px solid var(--ug-line);
+                      background: #fff; color: var(--ug-accent); font-size: 1rem; line-height: 1;
+                      display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .ug-panel .ug-btn.ug-close { font-size: 1.35rem; color: var(--ug-muted); }
+  .ug-panel .ug-btn:focus-visible { outline: 2px solid var(--ug-accent); outline-offset: 2px; }
+  .ug-body { max-height: min(75vh, 820px); overflow-y: auto; padding: 1.15rem 1.25rem 1.35rem; user-select: text;
+             background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(204, 251, 241, 0.25)); }
+  .ug-collapsed .ug-body { display: none; }
+  .ug-hero { margin-bottom: 1rem; padding: 1.1rem 1.15rem; border-radius: 14px; border: 1px solid rgba(15, 118, 110, 0.22);
+             background: radial-gradient(ellipse at top right, rgba(13, 148, 136, 0.12), transparent 55%),
+                         linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(204, 251, 241, 0.55)); }
+  .ug-kicker { margin: 0 0 0.4rem; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+               color: var(--ug-accent); }
+  .ug-hero-title { margin: 0 0 0.4rem; font-size: 1.4rem; font-weight: 800; color: var(--ug-ink); }
+  .ug-lead { margin: 0 0 0.65rem; font-size: 1rem; line-height: 1.7; }
+  .ug-stack { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+  .ug-pill { padding: 0.32rem 0.6rem; border-radius: 999px; border: 1px solid rgba(15, 118, 110, 0.28);
+             background: rgba(255, 255, 255, 0.9); font-size: 0.85rem; font-weight: 700; color: var(--ug-accent-deep); }
+  .ug-featured { margin-bottom: 1rem; padding: 1rem 1.1rem; border-radius: 12px; border: 1px solid rgba(15, 118, 110, 0.28);
+                 background: linear-gradient(135deg, rgba(204, 251, 241, 0.55), rgba(240, 253, 250, 0.95)); }
+  .ug-featured-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.45rem; flex-wrap: wrap; }
+  .ug-featured-head strong { font-size: 1.05rem; }
+  .ug-badge { padding: 0.2rem 0.6rem; border-radius: 999px; background: linear-gradient(135deg, #0f766e, #0d9488);
+              color: #fff; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .ug-featured p, .ug-steps p { margin: 0 0 0.45rem; font-size: 0.98rem; line-height: 1.7; }
+  .ug-label { margin: 0.6rem 0 0.2rem !important; font-weight: 700; }
+  .ug-items { margin: 0; padding: 0 0 0 1.35rem; }
+  .ug-items li { margin: 0.35rem 0; font-size: 0.95rem; line-height: 1.65; color: var(--ug-muted); }
+  .ug-panel code { background: rgba(15, 118, 110, 0.08); color: var(--ug-accent-deep); padding: 0 4px; border-radius: 4px;
+                   font-size: 0.88em; }
+  .ug-table { width: 100%; border-collapse: collapse; margin: 0.3rem 0 0.2rem; font-size: 0.88rem; }
+  .ug-table th, .ug-table td { padding: 4px 6px; border-bottom: 1px solid rgba(15, 118, 110, 0.18); white-space: normal;
+                               text-align: left; color: var(--ug-ink); }
+  .ug-table th { color: var(--ug-muted); font-size: 0.8rem; }
+  .ug-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ug-diagram { margin: 0 0 0.75rem; }
+  .ug-diagram figcaption { margin: 0 0 0.4rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em;
+                           text-transform: uppercase; color: var(--ug-muted); }
+  .ug-panel pre { margin: 0; padding: 0.85rem 0.95rem; border-radius: 10px; background: #0c1f1a; color: #99f6e4;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem;
+                  line-height: 1.6; overflow-x: auto; white-space: pre; max-height: none; }
+  .ug-scroll-hint { margin: 0 0 0.75rem; padding: 0.5rem 0.65rem; border-radius: 6px; background: rgba(255, 255, 255, 0.75);
+                    font-size: 0.95rem; font-weight: 600; text-align: center; color: var(--ug-accent); }
+  .ug-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.65rem; }
+  .ug-steps > li { padding: 0.9rem 1rem; border-radius: 10px; border: 1px solid var(--ug-line); background: rgba(255, 255, 255, 0.9); }
+  .ug-steps > li > strong { display: block; margin-bottom: 0.4rem; font-size: 1rem; letter-spacing: 0.04em; color: var(--ug-accent); }
+  .ug-footer { margin: 0.95rem 0 0; padding: 0.75rem 0.85rem; border-radius: 8px; border: 1px solid rgba(15, 118, 110, 0.2);
+               background: linear-gradient(135deg, rgba(204, 251, 241, 0.7), rgba(240, 253, 250, 0.85));
+               font-size: 0.95rem; color: var(--ug-accent-deep); line-height: 1.65; }
+  @media (max-width: 720px) {
+    .ug-panel { right: 0.5rem; left: 0.5rem; top: 3.5rem; width: auto; }
+    .ug-drag-hint { display: none; }
+    .ug-titles strong { font-size: 1.15rem; }
+  }
 </style>
 </head>
 <body>
@@ -64,6 +147,7 @@
     <span id="bizDate" class="badge">業務日付 -</span>
     <span id="health" class="badge warn">確認中</span>
     <span id="recon" class="badge warn">照合 未実行</span>
+    <button type="button" id="guideOpen" class="guide-open small" aria-controls="guide" aria-expanded="false">利用手順</button>
   </div>
 </header>
 
@@ -179,6 +263,257 @@
       <code>GET /actuator/health</code>。資金移動の POST には <code>Idempotency-Key</code> ヘッダーが必須です。</p>
   </section>
 </main>
+
+<!-- ================= 利用手順パネル ================= -->
+<div id="guide" class="ug-panel" role="dialog" aria-label="利用手順" aria-modal="false" hidden>
+  <header class="ug-header" id="guideHeader">
+    <div class="ug-header-text">
+      <span aria-hidden="true">☰</span>
+      <div class="ug-titles">
+        <strong>利用手順</strong>
+        <span class="ug-sub">Architecture &amp; Ops</span>
+      </div>
+      <span class="ug-drag-hint">ドラッグで移動</span>
+    </div>
+    <div class="ug-actions">
+      <button type="button" class="ug-btn" id="guideToggle" data-ug-control aria-expanded="true" aria-label="折りたたむ">▼</button>
+      <button type="button" class="ug-btn ug-close" id="guideClose" data-ug-control aria-label="閉じる">×</button>
+    </div>
+  </header>
+
+  <div class="ug-body">
+    <div class="ug-hero">
+      <p class="ug-kicker">Educational core banking demo</p>
+      <h2 class="ug-hero-title">bank-core ― 勘定系コアバンキング</h2>
+      <p class="ug-lead">
+        口座開設・入出金・行内振込・取消から、日次締め（利息・口座振替・融資の約定返済・延滞管理・有価証券・信託・
+        加盟店精算・AML 監視）・照合・承認までを、この 1 画面と REST API で再現する教育用サンプルです。
+        実在の顧客口座や決済網には接続していません。
+      </p>
+      <div class="ug-stack" aria-label="Tech stack">
+        <span class="ug-pill">Java 21 · Spring Boot 3.5</span>
+        <span class="ug-pill">PostgreSQL 16 · Flyway</span>
+        <span class="ug-pill">複式簿記</span>
+        <span class="ug-pill">冪等キー</span>
+        <span class="ug-pill">Transactional Outbox</span>
+        <span class="ug-pill">Testcontainers</span>
+        <span class="ug-pill">JP1 連携</span>
+      </div>
+    </div>
+
+    <div class="ug-featured" aria-label="アーキテクチャ">
+      <div class="ug-featured-head">
+        <span class="ug-badge">Architecture</span>
+        <strong>1 取引 = 1 DB トランザクション</strong>
+      </div>
+      <p>
+        冪等キーの予約 → 口座を ID 昇順でロック → 業務ルールの検証 → 残高更新・複式仕訳・Outbox を同じトランザクションで
+        記帳 → コミット。仕訳は貸借一致を DB トリガーが検証し、記帳後は変更・削除できません。
+      </p>
+    </div>
+
+    <div class="ug-featured" aria-label="推奨フロー">
+      <div class="ug-featured-head">
+        <span class="ug-badge">Recommended</span>
+        <strong>5 分で一通り試す</strong>
+      </div>
+      <ul class="ug-items">
+        <li>「口座開設」で 2 口座（例：山田 太郎・佐藤 花子）を作る</li>
+        <li>「現金 入金 / 出金」で 1 口座目に 100,000 円を入金する</li>
+        <li>「行内振込」で 30,000 円を振り込み、<b>同じキーのまま</b>もう一度押す → 二重にならないことを確認</li>
+        <li>口座一覧の「明細」→ 振込の行の「取消」で反対仕訳が入ることを確認</li>
+        <li>「日次締めを実行」→「承認」（実行者と別の人）で業務日付が翌日に進む</li>
+        <li>「照合を実行」→ ヘッダーの照合バッジが <b>一致</b> になる</li>
+      </ul>
+    </div>
+
+    <div class="ug-featured" aria-label="実用性能">
+      <div class="ug-featured-head">
+        <span class="ug-badge">Readiness</span>
+        <strong>実用性能の目安（計測値）</strong>
+      </div>
+      <p>開発 PC の Testcontainers 上での相対比較です（本番性能の見積もりではありません）。</p>
+      <table class="ug-table">
+        <thead><tr><th>処理</th><th class="num">結果</th></tr></thead>
+        <tbody>
+          <tr><td>振込（16 並列・口座 2,000）</td><td class="num">約 1,550 件/秒</td></tr>
+          <tr><td>カードのオーソリ</td><td class="num">約 760 件/秒</td></tr>
+          <tr><td>AML 監視（取引 3.2 万・オーソリ 4,000）</td><td class="num">1.7 秒</td></tr>
+          <tr><td>日次締め（口座 2,000・融資 300）</td><td class="num">5.0 秒</td></tr>
+        </tbody>
+      </table>
+      <p class="ug-label">やってよいこと</p>
+      <ul class="ug-items">
+        <li>資金が動く操作は必ず Idempotency-Key を付け、タイムアウト時は<b>同じキーで再送</b>する</li>
+        <li>締めが途中で失敗したら、原因を取り除いて<b>そのまま再実行</b>する（続きから処理・二重計上なし）</li>
+        <li>照合が不一致なら、修復を記録してから再実行する（日付は進まない）</li>
+      </ul>
+      <p class="ug-label">やらないこと</p>
+      <ul class="ug-items">
+        <li>DB の残高や仕訳を SQL で直接書き換えない（照合で検出され、締めが止まる）</li>
+        <li>実在の口座番号・個人情報を入力しない（認証・マスキングは未実装）</li>
+        <li>本番の決済網（全銀・SWIFT・カードブランド）につなぐ用途に使わない</li>
+      </ul>
+    </div>
+
+    <div class="ug-featured" aria-label="うまくいかないとき">
+      <div class="ug-featured-head">
+        <span class="ug-badge">Troubleshoot</span>
+        <strong>うまくいかないとき</strong>
+      </div>
+      <ul class="ug-items">
+        <li>ヘッダーが「API 接続不可」：<code>docker compose ps</code> で app と db が起動しているか確認</li>
+        <li>HTTP 400：入力の誤り（金額が 0 以下・キーの文字種・必須項目の不足）</li>
+        <li>HTTP 409：同じキーで内容を変えた／取消済み・承認済みなど状態が合わない</li>
+        <li>HTTP 422：業務ルールで拒否（残高不足・凍結口座・通貨不一致）。取引は REJECTED として記録される</li>
+        <li>HTTP 503：ロック待ちが続いた。<b>同じキーで</b>再送すれば安全</li>
+      </ul>
+    </div>
+
+    <figure class="ug-diagram" aria-label="Service topology">
+      <figcaption>Service topology</figcaption>
+<pre>ブラウザ（このデモ画面）/ curl / JP1 ジョブ
+    │ REST（Idempotency-Key）
+    ▼
+Spring Boot  :18080
+    │ 資金移動・融資・為替・証券・信託・カード
+    │ CRM・AML・リスク・日次締め
+    ▼
+PostgreSQL 16  :15432
+    ├ accounts / transactions（冪等キー）
+    ├ journal_entries / journal_lines（複式仕訳）
+    ├ outbox_events ──▶ 配信（重複は受信側で排除）
+    └ closing_steps / closing_audit（締めの記録）</pre>
+    </figure>
+
+    <p class="ug-scroll-hint">↓ 起動から運用までの手順</p>
+
+    <ol class="ug-steps">
+      <li>
+        <strong>1. 起動と状態確認</strong>
+        <p>Docker Desktop を起動し、bank-core のフォルダーで起動します。</p>
+        <ul class="ug-items">
+          <li><code>docker compose up -d --build</code>（初回はイメージのビルドに数分）</li>
+          <li>ブラウザで <code>http://localhost:18080</code> を開く</li>
+          <li>ヘッダー右：業務日付 / <b>API 稼働中</b> / 照合の結果を確認</li>
+          <li>DB はホストの <code>localhost:15432</code>（ユーザー・パスワード・DB 名はすべて bankcore）</li>
+        </ul>
+      </li>
+      <li>
+        <strong>2. 口座開設</strong>
+        <p>名義・通貨・当座貸越枠を入れて「開設」を押します。</p>
+        <ul class="ug-items">
+          <li>通貨は ISO コード（JPY / USD など）。外貨口座は両替・海外送金で使う</li>
+          <li>口座番号は 7 桁で自動採番。残高 0・状態 ACTIVE で作られる</li>
+          <li>当座貸越枠を設定すると、残高がマイナスでもその額まで出金できる</li>
+        </ul>
+      </li>
+      <li>
+        <strong>3. 現金の入金・出金</strong>
+        <p>口座と金額を選び、Idempotency-Key を確認して「入金」または「出金」を押します。</p>
+        <ul class="ug-items">
+          <li>キーは画面を開いたときに自動で入る。別の取引にするときは「新しいキー」</li>
+          <li>成功は HTTP 201。残高不足・凍結口座は HTTP 422（拒否も取引として記録）</li>
+          <li>仕訳：入金は 借方 現金 / 貸方 預金、出金はその逆</li>
+        </ul>
+      </li>
+      <li>
+        <strong>4. 行内振込と冪等性</strong>
+        <p>振込元・振込先・金額（メモは任意）を入れて「振込」を押します。</p>
+        <ul class="ug-items">
+          <li>同じキーのまま再度押す → 結果は同じで <code>Idempotent-Replayed: true</code>（二重に振り込まれない）</li>
+          <li>同じキーで金額を変える → HTTP 409（別の依頼にキーを使い回した誤り）</li>
+          <li>振込元と振込先は同じ口座にできない。通貨が違う口座へは振り込めない</li>
+        </ul>
+      </li>
+      <li>
+        <strong>5. 明細と取消（反対仕訳）</strong>
+        <p>口座一覧の「明細」で、その口座の仕訳（業務日付・摘要・入出金）を表示します。</p>
+        <ul class="ug-items">
+          <li>「取消」は元の仕訳を変えず、貸借を入れ替えた仕訳を新しい取引として記帳する</li>
+          <li>同じ取引の 2 回目の取消・取消取引の取消は HTTP 409</li>
+          <li>取消で相手口座の残高が足りないときは HTTP 422（入金後に再度取消できる）</li>
+        </ul>
+      </li>
+      <li>
+        <strong>6. 口座の凍結・解除</strong>
+        <p>口座一覧の「凍結」「凍結解除」で状態を切り替えます。</p>
+        <ul class="ug-items">
+          <li>凍結中の口座への入出金・振込は HTTP 422（TARGET / SOURCE_ACCOUNT_NOT_ACTIVE）</li>
+          <li>解約（CLOSED）は残高 0 のときだけ API から可能で、元に戻せない</li>
+        </ul>
+      </li>
+      <li>
+        <strong>7. 日次締め（実行 → 承認）</strong>
+        <p>実行者と承認者を入れて「日次締めを実行」を押します。10 のステップを順に処理します。</p>
+        <ul class="ug-items">
+          <li>利息計上 → 口座振替 → 融資の自動引落し → 延滞判定と引当 → 有価証券の利金・償還 → 時価評価
+            → 信託の満期払出し → 加盟店精算 → AML 監視 → 照合</li>
+          <li>照合に合格すると AWAITING_APPROVAL。<b>実行者とは別の人</b>が「承認」すると業務日付が翌日へ</li>
+          <li>「差戻し」は理由が必要。状態は REJECTED になり、修復してから再実行する</li>
+          <li>「状態を表示」で各ステップの件数・試行回数と監査ログ（誰がいつ何をしたか）を確認</li>
+          <li>途中で失敗しても再実行で続きから処理。各記帳は業務日付付きの冪等キーで二重計上しない</li>
+        </ul>
+      </li>
+      <li>
+        <strong>8. 照合（リコンサイル）</strong>
+        <p>「照合を実行」で帳簿の整合性を確かめます（読み取りのみ）。</p>
+        <ul class="ug-items">
+          <li>仕訳ごとの貸借一致・口座残高と仕訳の一致・融資残高と貸付元帳の一致</li>
+          <li>仮受金などの経過勘定と明細の一致、試算表の貸借一致</li>
+          <li>不一致の項目は結果の JSON に口座・融資ごとに表示される</li>
+        </ul>
+      </li>
+      <li>
+        <strong>9. 画面にない業務（API で操作）</strong>
+        <p>融資・為替・証券・投信と信託・カード・CRM・AML・リスク管理は API から操作します（PowerShell の例）。</p>
+        <ul class="ug-items">
+          <li>融資：<code>POST /api/loan-applications</code> → 担保・保証 → <code>/screening</code> → <code>/decision</code>（受付者以外）→ <code>/disbursement</code></li>
+          <li>為替：<code>/api/book-transfers</code>（振替）<code>/api/domestic-remittances</code>（他行・全銀）
+            <code>/api/fx-exchanges</code>（両替）<code>/api/foreign-remittances</code>（海外送金・制裁照合）</li>
+          <li>証券・投信・信託：<code>/api/securities/trades</code> <code>/api/fund-orders/subscriptions</code> <code>/api/money-trusts</code></li>
+          <li>カード：<code>/api/cards</code> → <code>/api/card-authorizations</code> → <code>/capture</code>、電子マネーは <code>/api/wallets</code></li>
+          <li>CRM・AML・リスク：<code>/api/customers</code> <code>/api/aml/alerts</code> <code>/api/risk/dashboard</code></li>
+          <li>例：<code>Invoke-RestMethod http://localhost:18080/api/risk/dashboard</code></li>
+        </ul>
+      </li>
+      <li>
+        <strong>10. ジョブスケジューラ（JP1）連携</strong>
+        <p>締めをジョブとして起動し、終了コードで結果を判定します。</p>
+        <ul class="ug-items">
+          <li><code>scripts\jp1\run-job.ps1 -Job daily-closing</code>（Linux は run-job.sh）</li>
+          <li>終了コード：0 正常 / 1 承認待ち / 4 照合不一致・差戻し（要修復）/ 8 異常終了（再実行で再開）/ 12 定義誤り</li>
+          <li><code>closing-status</code> ジョブで承認待ちを待ち合わせ、<code>reconciliation</code> で照合だけ実行できる</li>
+        </ul>
+      </li>
+      <li>
+        <strong>11. テストとデバッグ</strong>
+        <p>テストはすべて Testcontainers の実 PostgreSQL に対して実行します（Docker Desktop が必要）。</p>
+        <ul class="ug-items">
+          <li><code>.\mvnw.cmd verify</code> または <code>.\gradlew.bat test</code>（342 件）</li>
+          <li>VS Code で bank-core を開き、テストメソッドの行番号の横の ▷ をクリック → そのメソッドだけデバッグ実行</li>
+          <li>F10 ステップオーバー / F11 ステップイン / Shift+F11 ステップアウト / F5 続行</li>
+          <li>性能計測：<code>.\mvnw.cmd test "-Dtest=OperationsBenchmarkTest" "-Dbench=true" "-Dsurefire.failIfNoSpecifiedTests=false"</code></li>
+        </ul>
+      </li>
+      <li>
+        <strong>12. 環境・運用メモ</strong>
+        <p>設定は環境変数で変えられます（docker-compose.yml / application.yml）。</p>
+        <ul class="ug-items">
+          <li><code>CLOSING_APPROVAL_REQUIRED</code>：既定 true（承認が必要）。false で照合合格時に自動で日付を進める</li>
+          <li>締めの並行数 <code>bank.closing.parallelism</code>：既定 8（接続プール 20 未満）</li>
+          <li>ヘルスチェック：<code>GET /actuator/health</code></li>
+          <li>Docker のビルドで失敗するときは <code>COMPOSE_BAKE=false</code> と <code>DOCKER_CONTEXT=desktop-linux</code> を付ける</li>
+        </ul>
+      </li>
+    </ol>
+
+    <p class="ug-footer">
+      ▼▲ で開閉 · ドラッグで移動 · × または Esc で閉じる · 資金移動は Idempotency-Key 必須 ·
+      締めは実行者と別の人が承認 · 教育用サンプル（本番システムではありません）
+    </p>
+  </div>
+</div>
 
 <script>
   const fmt = n => Number(n).toLocaleString('ja-JP');
@@ -376,6 +711,79 @@
   businessDate();
   refresh();
   reconcile();
+
+  // ================= 利用手順パネル：開閉・折りたたみ・ドラッグ =================
+  (function setupGuide() {
+    const panel = document.getElementById('guide');
+    const header = document.getElementById('guideHeader');
+    const toggle = document.getElementById('guideToggle');
+    const opener = document.getElementById('guideOpen');
+    const store = {
+      get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+      set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 保存できない環境では無視 */ } }
+    };
+    let drag = null;
+
+    function setOpen(open) {
+      panel.hidden = !open;
+      opener.setAttribute('aria-expanded', String(open));
+      store.set('bankcore.guide.open', open ? '1' : '0');
+      if (open) clampIntoView();
+    }
+    function setExpanded(expanded) {
+      panel.classList.toggle('ug-collapsed', !expanded);
+      toggle.textContent = expanded ? '▼' : '▲';
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.setAttribute('aria-label', expanded ? '折りたたむ' : '開く');
+    }
+    // 画面外に出たパネルを見える範囲に戻す（ウィンドウを小さくしたときなど）
+    function clampIntoView() {
+      if (!panel.style.left) return;
+      const r = panel.getBoundingClientRect();
+      const x = Math.min(Math.max(0, r.left), Math.max(0, window.innerWidth - r.width));
+      const y = Math.min(Math.max(0, r.top), Math.max(0, window.innerHeight - 56));
+      panel.style.left = x + 'px';
+      panel.style.top = y + 'px';
+    }
+
+    opener.addEventListener('click', () => setOpen(panel.hidden));
+    document.getElementById('guideClose').addEventListener('click', () => setOpen(false));
+    toggle.addEventListener('click', () => setExpanded(panel.classList.contains('ug-collapsed')));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) setOpen(false); });
+    window.addEventListener('resize', clampIntoView);
+
+    header.addEventListener('pointerdown', e => {
+      if (e.target.closest('[data-ug-control]') || e.button !== 0) return;
+      const r = panel.getBoundingClientRect();
+      // 最初のドラッグで右上固定から左上座標の配置に切り替える
+      panel.style.left = r.left + 'px';
+      panel.style.top = r.top + 'px';
+      panel.style.right = 'auto';
+      drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
+      panel.classList.add('ug-dragging');
+      header.setPointerCapture(e.pointerId);
+    });
+    header.addEventListener('pointermove', e => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const w = panel.offsetWidth;
+      const x = Math.min(Math.max(0, e.clientX - drag.dx), Math.max(0, window.innerWidth - w));
+      const y = Math.min(Math.max(0, e.clientY - drag.dy), Math.max(0, window.innerHeight - 56));
+      panel.style.left = x + 'px';
+      panel.style.top = y + 'px';
+    });
+    const endDrag = e => {
+      if (!drag || drag.id !== e.pointerId) return;
+      drag = null;
+      panel.classList.remove('ug-dragging');
+      header.releasePointerCapture(e.pointerId);
+    };
+    header.addEventListener('pointerup', endDrag);
+    header.addEventListener('pointercancel', endDrag);
+
+    setExpanded(true);
+    // 初回は開いて表示し、閉じたらその状態を覚える
+    setOpen(store.get('bankcore.guide.open') !== '0');
+  })();
 </script>
 </body>
 </html>
